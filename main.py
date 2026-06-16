@@ -273,7 +273,7 @@ class CryptoshieldApp:
             messagebox.showinfo("Biometrics Setup", "Biometric face profile successfully saved!")
         else:
             self.gui.log("[ERROR] Biometric registration failed. Try again under better lighting.")
-            self.enroll_status_lbl.config(text="Registration Failed. Try again.", fg=self.gui.accent_red)
+            self.gui.enroll_status_lbl.config(text="Registration Failed. Try again.", fg=self.gui.accent_red)
         
         self.gui.btn_enroll_face.config(state="normal")
 
