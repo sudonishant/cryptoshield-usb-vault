@@ -9,9 +9,12 @@ class USBFaceAuth:
         self.model_path = os.path.join(self.model_dir, "face_model.xml")
         
         # Load Haar Cascade face detector
+        local_cascade = os.path.join(os.path.dirname(os.path.abspath(__file__)), "haarcascade_frontalface_default.xml")
         cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        if not os.path.exists(cascade_path) and os.path.exists(local_cascade):
+            cascade_path = local_cascade
         if not os.path.exists(cascade_path):
-            raise FileNotFoundError("Haar Cascade XML not found in OpenCV package.")
+            raise FileNotFoundError(f"Haar Cascade XML not found at {cascade_path}")
         self.face_cascade = cv2.CascadeClassifier(cascade_path)
         
         # Initialize recognizer
