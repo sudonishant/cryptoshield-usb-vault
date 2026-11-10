@@ -649,36 +649,35 @@ class CryptoshieldApp:
         self.root.destroy()
 
     # ==========================================
-    # LOCAL CREDENTIAL AUTO-UNLOCK UTILITIES
+    # LOCAL CREDENTIAL UTILITIES
     # ==========================================
 
     def _save_local_pin(self, pin: str):
-        """Saves the PIN locally, XOR-obfuscated to prevent plaintext visibility."""
-        try:
-            pin_file = os.path.join(self.data_dir, "secure_pin.dat")
-            xor_key = 0xAA
-            obfuscated = bytes([ord(c) ^ xor_key for c in pin])
-            with open(pin_file, "wb") as f:
-                f.write(obfuscated)
-        except Exception as e:
-            self.gui.log(f"[ERROR] Failed to save local PIN: {e}")
+        """Ensure no vault PIN is persisted on the host.
 
-    def _get_local_pin(self) -> str:
-        """Retrieves and de-obfuscates the locally saved PIN."""
+        A PIN is a vault credential, not a cacheable preference. Older
+        versions wrote a reversible XOR-obfuscated copy to disk, so remove
+        that legacy file if it exists and never write a replacement.
+        """
         try:
             pin_file = os.path.join(self.data_dir, "secure_pin.dat")
             if os.path.exists(pin_file):
-                with open(pin_file, "rb") as f:
-                    obfuscated = f.read()
-                xor_key = 0xAA
-                pin = "".join([chr(b ^ xor_key) for b in obfuscated])
-                return pin
+                os.remove(pin_file)
         except Exception as e:
-            self.gui.log(f"[ERROR] Failed to load local PIN: {e}")
+            self.gui.log(f"[ERROR] Failed to remove legacy local PIN: {e}")
+
+    def _get_local_pin(self) -> str:
+        """Return no PIN; vault access always requires an explicit PIN."""
+        try:
+            pin_file = os.path.join(self.data_dir, "secure_pin.dat")
+            if os.path.exists(pin_file):
+                os.remove(pin_file)
+        except Exception as e:
+            self.gui.log(f"[ERROR] Failed to remove legacy local PIN: {e}")
         return ""
 
     def _auto_unlock_via_face(self):
-        """Automatically unlocks the vault using the stored PIN when Face ID matches."""
+        """Keep the vault locked after face verification until the PIN is entered."""
         if self.gui.is_unlocked or not self.face_match_status or self.is_auto_unlocking:
             return
             
@@ -686,15 +685,8 @@ class CryptoshieldApp:
         if not self.selected_drive_path or not self.encryptor.is_vault_initialized(self.selected_drive_path):
             return
             
-        local_pin = self._get_local_pin()
-        if local_pin:
-            self.is_auto_unlocking = True
-            self.gui.log("[BIO MATCH] Face verified. Auto-unlocking secure vault...")
-            self.gui.entered_pin = local_pin
-            self.gui.pin_display_var.set("● " * len(local_pin))
-            threading.Thread(target=self._unlock_vault_thread, args=(local_pin,)).start()
-        else:
-            self.gui.log("[WARNING] Face verified but no local PIN found. Enter PIN manually.")
+        self._get_local_pin()
+        self.gui.log("[BIO MATCH] Face verified. Enter your PIN to unlock the vault.")
 
 if __name__ == "__main__":
     root = tk.Tk()
