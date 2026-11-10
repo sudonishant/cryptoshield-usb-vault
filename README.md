@@ -1,66 +1,115 @@
-# CryptoShield USB Secure Vault: Real Security System & Vulnerability Analysis
+# CryptoShield USB Secure Vault
 
-This project is a functional, local security system built in Python that secures files on a real USB drive using **AES-256-GCM encryption**, a **secure PIN**, and **facial recognition** via your computer's webcam. 
+CryptoShield is a local Python/Tkinter prototype that puts a password-derived encrypted vault inside a mounted removable drive. It can enroll a face with OpenCV, detect removable Linux volumes, move files into the vault, open decrypted temporary copies, extract files, and delete vault entries.
 
----
+It is **not a secure USB device, a hardware-backed key store, or a production security product**. The host computer, its Python environment, the webcam, the USB controller, and the operating system all remain part of the trusted computing base. Read the limitations before placing sensitive data in a vault.
 
-## 🚀 Setup & Installation (Hindi & English)
+## What is implemented
 
-### Requirements
-You will need a Linux machine with Python 3, a webcam, and a USB pen drive.
+- AES-GCM encryption for vault index and file contents. Each encrypted value has a random 12-byte nonce prepended to it.
+- A 256-bit key derived from the user-entered PIN with PBKDF2-HMAC-SHA256. A vault stores its random salt and PBKDF2 iteration count in `.secure_vault/vault.meta`.
+- A hidden `.secure_vault/` directory containing encrypted file blobs, an encrypted index, metadata, and (after enrollment) the OpenCV face model.
+- Linux removable-drive discovery through `lsblk`, with fallback checks under `/media/$USER` and `/run/media/$USER`.
+- A Tkinter UI for vault setup, face enrollment, unlock, add, extract, view, delete, lock, and permanent unprotect/restore operations.
 
-### Steps to Run:
-1. **Create Virtual Environment**:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-2. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. **Run the Application**:
-   ```bash
-   python main.py
-   ```
+Face recognition is an additional local signal, not a replacement for the PIN. The current controller explicitly keeps the vault locked after a face match and asks for the PIN. No PIN is persisted for automatic unlock; legacy `data/secure_pin.dat` files are removed when encountered.
 
----
+## Requirements
 
-## 🔒 How the System Works (Working Mechanism)
-1. **Cryptography**: When you lock your files, they are zipped in-memory and encrypted using **AES-256-GCM** (Galois/Counter Mode). The key is derived using **PBKDF2** with SHA-256, taking your PIN and a random salt (16 bytes) as input. GCM ensures that no one can tamper with or modify the encrypted data without invalidating the cryptographic signature.
-2. **Biometrics**: We use OpenCV's **LBPH (Local Binary Patterns Histograms) Face Recognizer** to match your face. Unlike deep learning models that require heavy GPU execution, LBPH is lightweight, runs locally, and performs histogram comparisons on texture features of the face.
-3. **Secure Shredding**: Standard file deletion in OS only removes pointers, leaving data intact. CryptoShield overwrites files with random bytes, then zeros, and flushes it to disk before removing the files, preventing standard file recovery tools from restoring them.
+- Linux with Python 3, Tkinter, `lsblk`, and a working webcam.
+- A mounted removable drive with enough free space for encrypted copies during setup.
+- Python packages listed in [`requirements.txt`](requirements.txt). `opencv-contrib-python` is required because the face recognizer uses OpenCV's LBPH module; the standard `opencv-python` package is not sufficient.
 
----
+Tkinter may need to be installed through the operating system (for example, the `python3-tk` package on Debian/Ubuntu). The repository does not declare or install OS packages.
 
-## ⚠️ Real-World Problems & Vulnerabilities (क्या-क्या समस्याएं हो सकती हैं?)
+## Quick start
 
-If we deploy this as a real security solution, there are major hardware, software, and physical security limitations. Here is a deep-dive analysis:
+From a clone of this repository:
 
-### 1. Host PC Compromise (होस्ट कंप्यूटर पर भरोसा न होना)
-* **Problem**: Because this security system runs as software on the computer, it is only as secure as the computer itself.
-* **Explanation (Hinglish)**: Agar aapne USB drive ko ek aisi PC par lagaya jisme virus, keylogger, ya screen recorder hai, toh malware aapka PIN capture kar sakta hai, webcam feed ko fake kar sakta hai, ya fir RAM me se decrypted AES key ko chura sakta hai. 
-* **Mitigation**: Real secure pen drives (like IronKey) handle ALL authentication and decryption inside a secure microcontroller physically embedded on the USB itself. No unencrypted keys or raw passwords ever touch the host computer's memory.
+```bash
+python3 -m venv venv
+. venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python main.py
+```
 
-### 2. Portability & Dependency Limits (पोर्टेबिलिटी की सीमा)
-* **Problem**: The drive cannot be read on systems without this software.
-* **Explanation (Hinglish)**: Is system ko chalane ke liye computer me Python, OpenCV, aur specific libraries honi chahiye. Agar aap is pen drive ko kisi friend ke laptop, smart TV, projector, ya office ke restricted PC me lagayenge, toh aap apna data open nahi kar payenge kyunki vahan software nahi hoga.
-* **Mitigation**: To make it truly plug-and-play, the authentication hardware (camera and keypad) must be physically on the USB drive body itself, unlocking raw storage partition only after successful on-device verification.
+The application starts scanning for mounted removable drives. The setup flow is:
 
-### 3. Biometric Spoofing (कैमरा बाईपास / फोटो से अनलॉक)
-* **Problem**: Standard 2D webcams cannot verify "liveness".
-* **Explanation (Hinglish)**: OpenCV standard face recognition sirf 2D face structure aur textures dekhta hai. Agar koi aapki high-resolution photo ya video tablet/phone par camera ke samne dikha de, toh system unlock ho sakta hai. Isme blink-detection, depth-sensing ya infrared scanning nahi hai.
-* **Mitigation**: Real-world face biometrics require dedicated hardware, such as Apple's TrueDepth camera (which projects 30,000 infrared dots to build a 3D mesh) or structured light sensors, which cannot fit on a standard USB stick cheaply.
+1. Select an unsecured removable drive.
+2. Capture the face profile in the webcam view (the controller collects 30 samples; the recognizer requires at least 10).
+3. Enter a PIN and vault label, then confirm the lock operation.
+4. After initialization, select the vault and enter the PIN to unlock it. A face match alone does not unlock the vault.
 
-### 4. Power & Computational Limits (बिजली और प्रोसेसिंग की समस्या)
-* **Problem**: High-power requirements for Face Recognition and Camera.
-* **Explanation (Hinglish)**: Agar hum physical USB drive par hi camera aur display lagana chahein, toh USB port ki power limit aati hai. USB 2.0 sirf 500mA (2.5W) and USB 3.0 sirf 900mA power deta hai. Itne kam power me ek processor, camera module, OLED display, aur face recognition neural networks chalana hardware level par bohot challenging hai. Battery lagane par size aur cost bohot badh jayegi.
+The setup operation encrypts files found on the drive, moves encrypted blobs under `.secure_vault/data/`, writes an encrypted index, and removes the original files. Test this with disposable files and a disposable drive first. Keep an independent backup; a failed operation, damaged drive, wrong PIN, or corrupted index can make data unavailable.
 
-### 5. Physical Hardware Bypass (चिप निकालकर डेटा चोरी करना)
-* **Problem**: Direct flash chip extraction.
-* **Explanation (Hinglish)**: Agar koi chor aapki pen drive physically chura leta hai, toh use software bypass karne ki zaroorat nahi hai. Woh pen drive ki plastic body ko kholkar, directly Flash Memory Chip (NAND) ko board se desolder kar sakta hai aur ek universal programmer reader me dalkar data extract kar sakta hai. 
-* **Mitigation**: Secure drives use a **Secure Element** (cryptographic chip) that automatically zeroizes/destroys the encryption keys if tampering is detected, and the flash chips are covered in hardened epoxy resin to prevent physical desoldering.
+### Optional launcher
 
-### 6. Wear-Leveling & SSD Shredding Limits (डेटा डिलीट होने के बाद भी रिकवरी का डर)
-* **Problem**: Solid-State storage wear-leveling defeats software shredding.
-* **Explanation (Hinglish)**: Flash memory/pen drives block-by-block write wear-leveling techniques use karti hain taaki memory jaldi kharab na ho. Is wajah se, jab hum software se data par overwrite (shred) karte hain, toh pen drive ka internal controller purane data block ko physically delete karne ke bajay ek naye block me data write kar deta hai. Purana plaintext data ab bhi physical flash blocks me chip ke andar pada rehta hai jo expert labs dump kar sakti hain.
+`Unlock.sh` can be used from a checkout that contains `main.py`:
+
+```bash
+chmod +x Unlock.sh
+./Unlock.sh
+```
+
+The launcher creates or reuses `/tmp/cryptoshield_venv` and installs the requirements there. It therefore needs network access the first time and writes outside the repository. It does not make the application portable to an arbitrary computer. The script's `.cryptoshield/main.py` branch is retained for the USB-layout convention, but this repository does not include that layout by default.
+
+## Architecture
+
+```text
+main.py
+  ├─ CryptoshieldApp: drive watcher, UI state, PIN flow, vault actions
+  ├─ USBFaceAuth (face_auth.py): Haar detection + LBPH enrollment/verification
+  ├─ USBEncryptor (encryptor.py): PBKDF2, AES-GCM, index, file lifecycle
+  └─ SecurityGUI (gui.py): Tkinter setup/access/explorer screens
+
+Mounted drive/
+  ├─ .secure_vault/
+  │   ├─ vault.meta       # JSON: salt, iteration count, label (not the PIN)
+  │   ├─ index.enc        # AES-GCM encrypted path-to-blob index
+  │   ├─ biometric.dat    # OpenCV face model copied during setup
+  │   └─ data/<uuid>      # AES-GCM encrypted file blobs
+  └─ Unlock.sh or Unlock  # optional launcher copied during initialization
+```
+
+The testable encryption API is in `USBEncryptor`. `initialize_vault()` creates metadata and an empty encrypted index; `lock_drive()` encrypts files already on the drive; `add_file_to_vault()` adds local files without deleting the source; `extract_file_from_vault()` writes plaintext to a chosen destination; and `unprotect_drive()` restores plaintext files and removes the vault. The GUI's “open” action decrypts a file into a temporary directory before passing it to the system viewer.
+
+## Safe usage and privacy warnings
+
+- Treat the PIN as the only vault credential and use a strong, unique value. The project does not provide PIN recovery.
+- Face matching uses a normal 2D webcam, Haar detection, and LBPH. There is no liveness, depth, infrared, anti-spoofing, or multi-user access control. A photo/video or a poor match may defeat or block the biometric check.
+- The enrolled face model is copied to the removable drive as `biometric.dat`. Anyone who can read the drive can obtain that biometric artifact; it is not an encrypted hardware template.
+- Opening a file creates a plaintext temporary copy under the system temporary directory. The app attempts to shred temporary files when the session closes, but viewers, swap, backups, crash dumps, and filesystem/flash wear-leveling can retain data.
+- The “secure shred” routine overwrites regular files before removal, but this is not a reliable guarantee on USB flash media or other wear-levelled storage.
+- File contents are read into memory before encryption/decryption. Large files may consume substantial RAM, and interrupted locking should be treated as a possible data-loss event.
+- A compromised host can capture the PIN, webcam frames, plaintext, or in-memory key. The software cannot protect against malware, a hostile OS, physical flash-chip extraction, or an untrusted USB port.
+- The vault is a directory on an existing filesystem; it does not create a protected partition or unlock storage in hardware. It requires this code and its dependencies on the host.
+- Verify the target drive carefully before confirming setup or unprotect. Unprotect permanently returns files to plaintext on the drive and deletes the vault configuration.
+
+## Testing
+
+The repository includes unit tests for key derivation, AES-GCM integrity, vault file lifecycle, face-recognizer behavior, and the no-local-PIN policy:
+
+```bash
+. venv/bin/activate
+python -m unittest discover -v
+```
+
+The end-to-end mock-drive workflow is a separate script (not auto-discovered by `unittest`):
+
+```bash
+python test_workflow.py
+```
+
+It uses temporary directories and a reduced PBKDF2 iteration count for speed; that setting is only for the test. Tests do not prove the security of a real USB device, webcam, host, filesystem, or deployment.
+
+## Files and generated data
+
+- `data/` is created beside `main.py` at runtime for local application state. The current code deliberately does not store a PIN there.
+- `venv/`, `/tmp/cryptoshield_venv`, `build/`, `dist/`, and `__pycache__/` are local/generated artifacts.
+- `build_binary.sh` is an optional PyInstaller helper. Inspect it before use: it installs PyInstaller into the active environment and removes `build/`, `dist/`, and `Unlock.spec` as part of its cleanup.
+- `install_daemon.sh` writes a login autostart daemon under `$HOME/.local/bin` and `$HOME/.config/autostart`, starts a background process, and contains machine-specific paths. It is not required for the normal application flow and is not a portable installer.
+
+## Project purpose and limitations
+
+This project is useful as an educational demonstration of authenticated encryption, a local vault index, removable-drive detection, and the gap between a software prototype and a tamper-resistant USB security product. It should not be presented as equivalent to a FIPS-certified device, a secure element, full-disk encryption, or a production biometric access system. Hardware-backed key storage, liveness detection, recovery/rollback design, secure update delivery, and a threat model for the host and flash controller would all be needed for a real security product.
