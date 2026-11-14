@@ -1,9 +1,10 @@
 import unittest
 import os
+import json
 import shutil
 import tempfile
 import numpy as np
-from encryptor import USBEncryptor
+from encryptor import DEFAULT_PBKDF2_ITERATIONS, USBEncryptor
 from face_auth import USBFaceAuth
 
 class TestContainerCryptography(unittest.TestCase):
@@ -100,6 +101,74 @@ class TestContainerCryptography(unittest.TestCase):
         
         updated_index = self.encryptor.load_index(self.temp_dir, key)
         self.assertNotIn(vault_rel_path, updated_index["files"])
+
+
+class TestKDFMigrationCompatibility(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.pin = "12345678"
+        self.payload = b"Synthetic legacy vault test data only."
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir)
+
+    def _create_legacy_vault(self, vault_path, include_iterations):
+        salt = b"legacy-vault-salt"
+        legacy_encryptor = USBEncryptor(iterations=100_000)
+        key = legacy_encryptor.derive_key(self.pin, salt)
+        vault_dir = os.path.join(vault_path, ".secure_vault")
+        data_dir = os.path.join(vault_dir, "data")
+        os.makedirs(data_dir)
+
+        metadata = {"salt": salt.hex(), "label": "LegacyVault"}
+        if include_iterations:
+            metadata["iterations"] = 100_000
+        with open(os.path.join(vault_dir, "vault.meta"), "w") as f:
+            json.dump(metadata, f)
+
+        file_id = "legacy-file"
+        index = {"files": {"legacy.txt": {"id": file_id, "size": len(self.payload)}}}
+        with open(os.path.join(vault_dir, "index.enc"), "wb") as f:
+            f.write(legacy_encryptor.encrypt_data(json.dumps(index).encode("utf-8"), key))
+        with open(os.path.join(data_dir, file_id), "wb") as f:
+            f.write(legacy_encryptor.encrypt_data(self.payload, key))
+
+    def _assert_legacy_vault_opens(self, include_iterations):
+        vault_path = os.path.join(self.temp_dir, "legacy-vault")
+        os.makedirs(vault_path)
+        self._create_legacy_vault(vault_path, include_iterations)
+
+        current_encryptor = USBEncryptor()
+        key = current_encryptor.get_vault_key(vault_path, self.pin)
+        index = current_encryptor.load_index(vault_path, key)
+        self.assertIn("legacy.txt", index["files"])
+        destination = os.path.join(self.temp_dir, "restored.txt")
+        file_id = index["files"]["legacy.txt"]["id"]
+        self.assertTrue(current_encryptor.extract_file_from_vault(vault_path, key, file_id, destination))
+        with open(destination, "rb") as f:
+            self.assertEqual(f.read(), self.payload)
+
+    def test_legacy_vault_with_stored_iterations_remains_readable(self):
+        self._assert_legacy_vault_opens(include_iterations=True)
+
+    def test_legacy_vault_without_iteration_metadata_uses_legacy_default(self):
+        self._assert_legacy_vault_opens(include_iterations=False)
+
+    def test_new_vault_records_default_iterations_and_reopens(self):
+        self.assertEqual(USBEncryptor().iterations, DEFAULT_PBKDF2_ITERATIONS)
+        self.assertEqual(DEFAULT_PBKDF2_ITERATIONS, 600_000)
+        vault_path = os.path.join(self.temp_dir, "new-vault")
+        os.makedirs(vault_path)
+
+        writer = USBEncryptor()
+        original_key = writer.initialize_vault(vault_path, self.pin, "NewVault")
+        with open(os.path.join(vault_path, ".secure_vault", "vault.meta"), "r") as f:
+            metadata = json.load(f)
+        self.assertEqual(metadata["iterations"], DEFAULT_PBKDF2_ITERATIONS)
+
+        reopened = USBEncryptor()
+        self.assertEqual(reopened.get_vault_key(vault_path, self.pin), original_key)
+        self.assertEqual(reopened.load_index(vault_path, original_key), {"files": {}, "label": "NewVault"})
 
 
 class TestFaceAuthCore(unittest.TestCase):

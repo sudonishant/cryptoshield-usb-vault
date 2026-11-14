@@ -8,8 +8,11 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.backends import default_backend
 
+DEFAULT_PBKDF2_ITERATIONS = 600_000
+LEGACY_PBKDF2_ITERATIONS = 100_000
+
 class USBEncryptor:
-    def __init__(self, iterations=100_000):
+    def __init__(self, iterations=DEFAULT_PBKDF2_ITERATIONS):
         self.iterations = iterations
         self.temp_dirs = []
 
@@ -121,7 +124,9 @@ class USBEncryptor:
             meta = json.load(f)
 
         salt = bytes.fromhex(meta["salt"])
-        iterations = meta.get("iterations", self.iterations)
+        # Metadata written before iteration counts were recorded used 100,000.
+        # Keep that legacy default independent of the current new-vault default.
+        iterations = meta.get("iterations", LEGACY_PBKDF2_ITERATIONS)
         
         # Derive key
         kdf = PBKDF2HMAC(
