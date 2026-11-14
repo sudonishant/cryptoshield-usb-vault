@@ -27,7 +27,7 @@ You will need a Linux machine with Python 3, a webcam, and a USB pen drive.
 ---
 
 ## 🔒 How the System Works (Working Mechanism)
-1. **Cryptography**: When you lock your files, they are zipped in-memory and encrypted using **AES-256-GCM** (Galois/Counter Mode). The key is derived using **PBKDF2** with SHA-256, taking your PIN and a random salt (16 bytes) as input. GCM ensures that no one can tamper with or modify the encrypted data without invalidating the cryptographic signature.
+1. **Cryptography**: When you lock your files, they are encrypted using **AES-256-GCM** (Galois/Counter Mode). The key is derived using **PBKDF2-HMAC-SHA256** with your PIN and a random 16-byte salt. New vaults use 600,000 iterations, recorded in the vault metadata; existing vaults continue using their recorded count, and metadata without a count retains the legacy 100,000-iteration default. This does not re-key existing vaults. The setup interface still accepts 4–8 digit numeric PINs, so a higher work factor does not make a short PIN strong against offline guessing. GCM ensures that tampering with encrypted data invalidates its authentication tag.
 2. **Biometrics**: We use OpenCV's **LBPH (Local Binary Patterns Histograms) Face Recognizer** to match your face. Unlike deep learning models that require heavy GPU execution, LBPH is lightweight, runs locally, and performs histogram comparisons on texture features of the face.
 3. **Secure Shredding**: Standard file deletion in OS only removes pointers, leaving data intact. CryptoShield overwrites files with random bytes, then zeros, and flushes it to disk before removing the files, preventing standard file recovery tools from restoring them.
 
